@@ -1,0 +1,64 @@
+package rules;
+
+import com.clarity.dto.Alarm;
+//import com.clarity.Services.TestService;
+import com.clarity.events.AlarmInterval;
+import com.clarity.repository.Neo4jRepository;
+import java.lang.Long
+import java.util.Date;
+
+
+global Long downInterval;
+global Neo4jRepository handler;
+
+//rule "rules"
+//dialect "mvel"
+//no-loop
+//    when
+//        Alarm(province == "TH" , $province : province )
+//    then
+//	    System.out.println(TestService.combineStr($province));
+//end
+
+
+//rule "Setting Timer for Cell On Alarm Event"
+////timer(Long: ~downInterval~)
+//dialect "mvel"
+//no-loop
+//  when
+//    Alarm(source == "cell",  status == "on", $site : siteName, $cell : cellName, $onTime : onTime, $ID : occurrenceID)
+//    not Alarm(source == "cell", occurrenceID == $ID, status == "off", siteName == $site, cellName == $cell)
+//  then
+//	System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + ($onTime) );
+//	AlarmInterval ai = new AlarmInterval("cell", $cell, $site, $ID, $onTime,  new Date(),new Date());
+//	handler.createAlarmInterval(ai);
+//	insert(ai);
+//end
+
+rule "Inferring Cell Interval Fact"
+ dialect "mvel"
+ no-loop
+   when
+    Alarm(source == "cell", status == "off", $site : siteName, $cell : cellName, $offTime : offTime, $ID : occurrenceID)
+    Alarm(source == "cell", status == "on", siteName == $site , cellName == $cell, $onTime : onTime, occurrenceID == $ID)
+    not AlarmInterval(siteName == $site, cellName == $cell, occurrenceID == $ID)
+   then
+   System.out.println("Inferring Cell Interval Fact");
+    System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + $onTime + " with duration " );
+    AlarmInterval ai = new AlarmInterval("cell", $cell, $site, $ID, $onTime,  $offTime,new Date());
+    handler.createAlarmInterval(ai);
+    insert(ai);
+ end
+
+//rule "Updating Cell Interval Fact"
+//dialect "mvel"
+//no-loop
+//  when
+//    Alarm(source == "cell", status == "off", $site : siteName, $cell : cellName, $offTime : offTime, $ID : occurrenceID)
+//    $ai : AlarmInterval(siteName == $site, cellName == $cell, occurrenceID == $ID, $onTime : reported, offTime != $offTime)
+//  then
+//    $ai.setOffTime($offTime);
+//    System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + ($onTime) + " with duration " );
+//    update($ai);
+//    handler.updateAlarmInterval($ai);
+//end

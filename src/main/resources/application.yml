@@ -1,0 +1,31 @@
+variables:
+  deleteAllNodeQuery: 'match(n) detach delete n'
+#  updateCellTriiger: "CALL apoc.trigger.add(\'Updating Number of Cells in Site node\',
+#  \'UNWIND apoc.trigger.nodesByLabel($assignedLabels,\Cell\) as n
+#   match(bts:BTS)-[]->(n) set bts.numberOfCells=COALESCE(bts.numberOfCells,0)  1\', {phase:\'afterAsync\'});"
+
+
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: latest
+    listener:
+      ack-mode: manual
+
+server:
+  port: 9000
+
+RMS:
+  kafka:
+    topic: RMS72
+
+org:
+  neo4j:
+    uri: neo4j://localhost:7687
+    authentication:
+      username=neo4j: neo4j
+      password: hassan495594
+
+

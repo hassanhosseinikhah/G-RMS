@@ -1,0 +1,227 @@
+package com.clarity.drools;
+
+import function java.lang.Math.min;
+import function java.lang.Math.max;
+import java.lang.Long;
+import java.util.Date;
+
+declare Alarm
+	@role(event)
+	@expires(1000s)
+	@timestamp(timestamp)
+end
+//
+//declare CellIntervalEvent
+//	@role(event)
+//	@expires(1000s)
+//	@timestamp(timestamp)
+////	@duration(duration)
+//end
+//
+//declare SiteIntervalEvent
+//	@role(event)
+//	@expires(1000s)
+//	@timestamp(timestamp)
+////	@duration(duration)
+//end
+//
+//declare CellsOverlapEvent
+//	@role(event)
+//	@expires(1000s)
+//	@timestamp(timestamp)
+////	@duration(duration)
+//end
+//
+//declare SiteCandidate
+//	@role(event)
+//	@expires(1000s)
+//	@timestamp(timestamp)
+////	@duration(duration)
+//end
+
+//global Long numberOfTickets;
+//global TestEvent te;
+
+rule "Setting Timer for Cell On Alarm Event"
+timer(int: ~downinterval~)
+dialect "mvel"
+no-loop
+  when
+    AlarmDTO(source == "cell",  status == "on", $site : siteName, $cell : cellName, $onTime : reported, $ID : occurrenceID, $clarityTime : clarityTime)
+    not AlarmDTO(source == "cell", occurrenceID == $ID, status == "off", siteName == $site, cellName == $cell)
+  then
+	System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + Long.toString($onTime) + " with duration ~downinterval~ms is Detected.");
+	insert(new AlarmInterval("cell", $cell, $site, $ID, $onTime, (Long) $onTime + ~downinterval~, $clarityTime));
+end
+
+rule "Inferring Cell Interval Fact"
+dialect "mvel"
+no-loop
+  when
+    AlarmDTO(source == "cell", status == "off", $site : siteName, $cell : cellName, $offTime : reported, $ID : occurrenceID, $clarityTime : clarityTime)
+    AlarmDTO(source == "cell", status == "on", siteName == $site , cellName == $cell, $onTime : reported, occurrenceID == $ID)
+    not AlarmInterval(siteName == $site, cellName == $cell, occurrenceID == $ID)
+  then
+    System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + Long.toString($onTime) + " with duration " + Long.toString($offTime-$onTime) + "ms is Detected.");
+	insert(new AlarmInterval("cell", $cell, $site, $ID, $onTime, $offTime, $clarityTime));
+end
+
+rule "Updating Cell Interval Fact"
+dialect "mvel"
+no-loop
+  when
+    AlarmDTO(source == "cell", status == "off", $site : siteName, $cell : cellName, $offTime : reported, $ID : occurrenceID)
+    $ai : AlarmInterval(siteName == $site, cellName == $cell, occurrenceID == $ID, $onTime : reported, offTime != $offTime)
+  then
+    $ai.setOfftime($offTime);
+    System.out.println("Cell Interval for Cell " + $cell + " on Site " + $site + " starting at " + Long.toString($onTime) + " with duration " + Long.toString($offTime-$onTime) + "ms is Updated.");
+    update($ai);
+
+end
+
+rule "Inferring Cell Down Ticket"
+dialect "mvel"
+no-loop
+  when
+    AlarmInterval(source == "cell", $cell : cellName, $site : siteName, $onTime : reported, $ID : occurrenceID, $offTime : offTime >= $onTime + ~downinterval~, $clarityTime : clarityTime)
+    not TicketDTO(neType == "cell", neName == $cell, parentID == $site)
+//    not PartialTicketDTO(cause == "Site Down", neType == "site", neName == $site, )
+  then
+    System.out.println("cell down ticket for cell " + $cell);
+    insert(new TicketDTO(Long.toString(numberOfTickets), "Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+    numberOfTickets += 1;
+//    insert(new PartialTicketDTO("Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+end
+
+rule "Considering a Ticket for Its Parent 1"
+dialect "mvel"
+no-loop
+  when
+    TicketDTO($cause : cause, $neType : neType, $neName : neName, $parentID : parentID)
+    not PartialTicketDTO(cause == $cause, neName == $parentID, )
+  then
+    System.out.println("cell down ticket for cell " + $cell);
+    insert(new TicketDTO(Long.toString(numberOfTickets), "Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+    numberOfTickets += 1;
+//    insert(new PartialTicketDTO("Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+end
+
+rule "Considering a Ticket for Its Parent 2"
+dialect "mvel"
+no-loop
+  when
+    TicketDTO($cause : cause, $neType : neType, $neName : neName, $parentID : parentID)
+    not PartialTicketDTO(cause == "Site Down", neType == "site", neName == $site, )
+  then
+    System.out.println("cell down ticket for cell " + $cell);
+    insert(new TicketDTO(Long.toString(numberOfTickets), "Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+    numberOfTickets += 1;
+//    insert(new PartialTicketDTO("Cell Down", "cell", $cell, $site, $onTime, new Date().getTime()));
+end
+
+rule "Inferring Site Down Ticket"
+dialect "mvel"
+no-loop
+  when
+    TicketDTO()
+    AlarmEvent(source == "site", status == "on", $site : siteName, $timestamp : timestamp < currTime-, $occurrenceID : occurrenceID)
+    not SiteIntervalEvent(siteName == $site, occurrenceID == $occurrenceID)
+  then
+    System.out.println("Site " + $site + " Down");
+end
+
+//rule "Setting Timer for Site On Alarm Event"
+//timer(int: ~downinterval~)
+//dialect "mvel"
+//no-loop
+//  when
+//    $e1 : AlarmEvent(source == "site", status == "on", $site : siteName, $onTimestamp : timestamp, $ID : occurrenceID)
+//    not AlarmEvent(source == "site", occurrenceID == $ID, status == "off", siteName == $site , timestamp > $onTimestamp)
+//  then
+//    System.out.println("Site Interval for Site " + $site + " is Detected.");
+//	insert(new SiteIntervalEvent($site, $ID, $onTimestamp, ));
+//end
+
+//rule "Inferring Site Interval Fact"
+//dialect "mvel"
+//no-loop
+//  when
+//    AlarmEvent(source == "site", status == "off", $site : siteName, $offTimestamp : timestamp, $ID : occurrenceID)
+//    AlarmEvent(source == "site", status == "on", siteName == $site, $onTimestamp : timestamp, occurrenceID == $ID)
+//    not SiteIntervalEvent(siteName == $site, occurrenceID == $ID)
+//  then
+//    System.out.println("Site Interval for Site " + $site + " is Detected.");
+//	insert(new SiteIntervalEvent($site, $ID, $onTimestamp, $offTimestamp - $onTimestamp));
+//end
+
+//rule "Updating Site Interval Fact"
+//dialect "mvel"
+//no-loop
+//  when
+//    AlarmEvent(source == "site", status == "off", $site : siteName, $offTimestamp : timestamp, $ID : occurrenceID)
+//    $sie : SiteIntervalEvent(siteName == $site, occurrenceID == $ID, $onTimestamp : timestamp, eventduration != $offTimestamp-$onTimestamp)
+//  then
+//    System.out.println("Site Interval for Site " + $site + " starting at " + Integer.toString($onTimestamp-startTime) + " with duration " + $sie.getEventduration() + " is Detected.");
+//    $sie.setEventduration($offTimestamp-$onTimestamp);
+//    update($sie);
+//end
+
+
+
+
+//rule "Inferring Site Down 1"
+//dialect "mvel"
+//no-loop
+//  when
+//    AlarmEvent(source == "site", status == "on", $site : siteName, $timestamp : timestamp < currTime-, $occurrenceID : occurrenceID)
+//    not SiteIntervalEvent(siteName == $site, occurrenceID == $occurrenceID)
+//  then
+//    System.out.println("Site " + $site + " Down");
+//end
+//
+//rule "Inferring Site Down Fact 2"
+//dialect "mvel"
+//no-loop
+//  when
+//    AlarmEvent(source == "cell", status == "on", $site : siteName, $cell : cellName, $timestamp : timestamp < currTime-, $ID : occurrenceID)
+//    not CellIntervalEvent(siteName == $site, cellName == $cell, occurrenceID == $ID)
+//    CellsOverlapEvent(siteName == $site, timestamp+eventduration > $timestamp, getCounter() == 2)
+//  then
+//    System.out.println("Site " + $site + " Down");
+//end
+
+//rule "Inferring Site Down 2"
+//dialect "mvel"
+//no-loop
+//  when
+//    AlarmEvent(source == "cell", status == "on", $site : siteName, $cell : cellName, $timestamp : timestamp < currTime-, $ID : occurrenceID)
+//    not CellIntervalEvent(siteName == $site, cellName == $cell, occurrenceID == $ID)
+//    CellsOverlapEvent(siteName == $site, timestamp+eventduration > $timestamp, getCounter() == 2)
+//  then
+//    System.out.println("Site " + $site + " Down");
+//end
+
+//rule "Inferring Site Fluctuation"
+//dialect "mvel"
+//no-loop
+//  when
+//    $sc : SiteCandidate($site : siteName, longestDuration < , $firsttimestamp : timestamp)
+//    SiteCandidate(siteName == $site, longestDuration < , timestamp < $firsttimestamp+fluctuationInterval, )
+//  then
+//    System.out.println("Site " + $site + " Fluctuated.");
+//end
+
+//rule "Inferring Cell Fluctuation"
+//dialect "mvel"
+//no-loop
+//  when
+//    SiteCandidate($site : siteName, longestDuration < , $firsttimestamp : timestamp)
+//    SiteCandidate(siteName == $site, longestDuration < , timestamp < $firsttimestamp+fluctuationInterval)
+//  then
+//    System.out.println("Site " + $site + " Fluctuated.");
+//end
+
+//    modify($c){
+//        setDiscount($c.getDiscount()+0.1),
+//        addDiscountReason("Seniority grater than 3 years")
+//    }
